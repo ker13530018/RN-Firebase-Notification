@@ -144,13 +144,14 @@ const App = ({navigation}) => {
       });
 
       messaging().onMessage((message) => {
-        console.log('onMessage :', message);
         const {
-          sentTime,
-          notification: {body, title},
+          data: {title, description, type},
         } = message;
+        //
+        console.log('messaging onMessage :', message, type);
+        //
         try {
-          NotificationModule.Show(sentTime, body, title);
+          NotificationModule.Show(15001039, title, description);
         } catch (error) {
           console.log('Notification method show error :', error);
         }
