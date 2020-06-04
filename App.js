@@ -15,9 +15,12 @@ import {
   Text,
   StatusBar,
   Button,
+  Alert,
 } from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
+import AsyncStorage from '@react-native-community/async-storage';
+import PushNotificationIOS from '@react-native-community/push-notification-ios';
 import {
   Header,
   LearnMoreLinks,
@@ -25,24 +28,34 @@ import {
   DebugInstructions,
   ReloadInstructions,
 } from 'react-native/Libraries/NewAppScreen';
-
-import {} from '@react-navigation/native';
-import messaging from '@react-native-firebase/messaging';
-
-import firebase from '@react-native-firebase/app';
+// import moment from 'moment';
+// import messaging from '@react-native-firebase/messaging';
+import {firebase} from '@react-native-firebase/messaging';
+import firebaseApp from '@react-native-firebase/app';
 import NotificationModule from './NotificationModule';
 import {credentials, config} from './firebaseCredential';
 const Stack = createStackNavigator();
 
+const defaultAppMessaging = firebase.messaging();
+
 const requestUserPermission = async () => {
-  const authorizationStatus = await messaging().requestPermission({
+  PushNotificationIOS.requestPermissions({
+    alert: true,
+    badge: true,
+    sound: true,
+  });
+  const authorizationStatus = await defaultAppMessaging.requestPermission({
     provisional: true,
+    sound: true,
+    announcement: true,
   });
 
-  if (authorizationStatus === messaging.AuthorizationStatus.AUTHORIZED) {
+  if (
+    authorizationStatus === firebase.messaging.AuthorizationStatus.AUTHORIZED
+  ) {
     console.log('User has notification permissions enabled.');
   } else if (
-    authorizationStatus === messaging.AuthorizationStatus.PROVISIONAL
+    authorizationStatus === firebase.messaging.AuthorizationStatus.PROVISIONAL
   ) {
     console.log('User has provisional notification permissions.');
     //
@@ -116,20 +129,24 @@ const HomeScreen = ({navigation}) => {
   );
 };
 
-const onAppBootstrap = async () => {
-  // Register the device with FCM
-  await messaging().registerDeviceForRemoteMessages();
+const onMessageHandle = (from, message) => {
+  const {
+    data: {
+      notification: {title, body},
+    },
+  } = message;
+  //
+  console.log(`message from ${from} messaging onMessage :`, message);
+  //
+  if (from === 'normal') {
+    Alert.alert(title, body);
+  }
 
-  // Get the token
-  const token = await messaging().getToken();
-
-  console.log('onAppBootstrap token :', token);
-};
-
-const FirebaseInit = async () => {
-  // Your secondary Firebase project credentials...
-
-  await firebase.initializeApp(credentials, config);
+  try {
+    NotificationModule.Show(1, title, body);
+  } catch (error) {
+    console.log('Notification method show error :', error);
+  }
 };
 
 const App = ({navigation}) => {
@@ -137,66 +154,45 @@ const App = ({navigation}) => {
   const [initialRoute, setInitialRoute] = useState('Home');
 
   useEffect(() => {
-    FirebaseInit().then(() => {
-      // Register background handler
-      messaging().setBackgroundMessageHandler((message) => {
-        console.log('setBackgroundMessageHandler :', message);
-      });
+    const initialize = async () => {
+      await firebaseApp.initializeApp(credentials, config);
 
-      messaging().onMessage((message) => {
-        const {
-          data: {title, description, type},
-        } = message;
-        //
-        console.log('messaging onMessage :', message, type);
-        //
-        try {
-          NotificationModule.Show(15001039, title, description);
-        } catch (error) {
-          console.log('Notification method show error :', error);
-        }
-      });
+      await requestUserPermission();
 
-      // Refresh token
-      messaging().onTokenRefresh((token) => {
-        console.log('onTokenRefresh new token :', token);
-      });
-
-      requestUserPermission({
-        sound: true,
-        provisional: true,
-        announcement: true,
-      })
-        .then(() => {})
-        .catch((error) => {
-          console.log('requestUserPermission error :', error.message);
-        });
-
-      //notification
-      messaging().onNotificationOpenedApp((remoteMessage) => {
+      defaultAppMessaging.onNotificationOpenedApp((remoteMessage) => {
         console.log(
           'Notification caused app to open from background state:',
-          remoteMessage.notification,
+          remoteMessage,
         );
         navigation.navigate(remoteMessage.data.type);
       });
 
-      messaging()
-        .getInitialNotification()
-        .then((remoteMessage) => {
-          if (remoteMessage) {
-            console.log(
-              'Notification caused app to open from quit state:',
-              remoteMessage.notification,
-            );
-            setInitialRoute(remoteMessage.data.type); // e.g. "Settings"
-          }
-          console.log('getInitialNotification...');
-          setLoading(false);
-        });
-    });
+      defaultAppMessaging.getInitialNotification().then((remoteMessage) => {
+        if (remoteMessage) {
+          console.log(
+            'Notification caused app to open from quit state:',
+            remoteMessage,
+          );
+          setInitialRoute('Settings'); // e.g. "Settings"
+        }
+        console.log('getInitialNotification...');
+        setLoading(false);
+      });
 
-    onAppBootstrap().then();
+      defaultAppMessaging.onMessage((msg) => onMessageHandle('normal', msg));
+    };
+    const getFirebaseToken = async () => {
+      // await firebase.messaging().registerDeviceForRemoteMessages();
+      const token = await defaultAppMessaging.getToken();
+      console.log('getFirebaseToken :', token);
+      const keys = await AsyncStorage.getAllKeys();
+      console.log('AsyncStorage keys :', keys);
+    };
+
+    initialize().then(() => {
+      getFirebaseToken();
+    });
+    //
   }, []);
 
   if (loading) {
