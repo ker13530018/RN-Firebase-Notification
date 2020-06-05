@@ -16,11 +16,12 @@ import {
   StatusBar,
   Button,
   Alert,
+  Platform,
 } from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
-import AsyncStorage from '@react-native-community/async-storage';
 import PushNotificationIOS from '@react-native-community/push-notification-ios';
+import PushNotification from 'react-native-push-notification';
 import {
   Header,
   LearnMoreLinks,
@@ -28,41 +29,13 @@ import {
   DebugInstructions,
   ReloadInstructions,
 } from 'react-native/Libraries/NewAppScreen';
-// import moment from 'moment';
-// import messaging from '@react-native-firebase/messaging';
 import {firebase} from '@react-native-firebase/messaging';
 import firebaseApp from '@react-native-firebase/app';
-import NotificationModule from './NotificationModule';
 import {credentials, config} from './firebaseCredential';
+import moment from 'moment';
 const Stack = createStackNavigator();
 
 const defaultAppMessaging = firebase.messaging();
-
-const requestUserPermission = async () => {
-  PushNotificationIOS.requestPermissions({
-    alert: true,
-    badge: true,
-    sound: true,
-  });
-  const authorizationStatus = await defaultAppMessaging.requestPermission({
-    provisional: true,
-    sound: true,
-    announcement: true,
-  });
-
-  if (
-    authorizationStatus === firebase.messaging.AuthorizationStatus.AUTHORIZED
-  ) {
-    console.log('User has notification permissions enabled.');
-  } else if (
-    authorizationStatus === firebase.messaging.AuthorizationStatus.PROVISIONAL
-  ) {
-    console.log('User has provisional notification permissions.');
-    //
-  } else {
-    console.log('User has notification permissions disabled');
-  }
-};
 
 const SettingScreen = () => {
   return (
@@ -78,6 +51,24 @@ const SettingScreen = () => {
 };
 
 const HomeScreen = ({navigation}) => {
+  const [token, setToken] = useState('');
+  const [apnsToken, setAPNsToken] = useState('');
+  useEffect(() => {
+    const getToken = async () => {
+      const _token = await defaultAppMessaging.getToken();
+      console.log('token', _token);
+      setToken(_token);
+      // defaultAppMessaging.apnsToken = token;
+      const tokenAPNs = await defaultAppMessaging.getAPNSToken();
+      console.log('tokenAPNs', tokenAPNs);
+      setAPNsToken(apnsToken);
+    };
+
+    getToken();
+
+    return () => {};
+  }, []);
+
   return (
     <>
       <StatusBar barStyle="dark-content" />
@@ -95,8 +86,8 @@ const HomeScreen = ({navigation}) => {
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>Settings</Text>
               <Text style={styles.sectionDescription}>
-                Edit <Text style={styles.highlight}>App.js</Text> to change this
-                screen and then come back to see your edits.
+                Edit <Text style={styles.highlight}>App.js</Text> to change
+                this: {token}
               </Text>
               <Button
                 title="Settings"
@@ -118,7 +109,7 @@ const HomeScreen = ({navigation}) => {
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>Learn More</Text>
               <Text style={styles.sectionDescription}>
-                Read the docs to discover what to do next:
+                Apns token: {apnsToken}
               </Text>
             </View>
             <LearnMoreLinks />
@@ -129,21 +120,18 @@ const HomeScreen = ({navigation}) => {
   );
 };
 
-const onMessageHandle = (from, message) => {
-  const {
-    data: {
-      notification: {title, body},
-    },
-  } = message;
+const onMessageHandle = (notification) => {
+  const {title, message, data} = notification;
   //
-  console.log(`message from ${from} messaging onMessage :`, message);
-  //
-  if (from === 'normal') {
-    Alert.alert(title, body);
-  }
-
   try {
-    NotificationModule.Show(1, title, body);
+    PushNotification.localNotification({
+      id: moment().unix(),
+      title,
+      message,
+      priority: 'high',
+      alertBody: message,
+      alertTitle: title,
+    });
   } catch (error) {
     console.log('Notification method show error :', error);
   }
@@ -157,42 +145,83 @@ const App = ({navigation}) => {
     const initialize = async () => {
       await firebaseApp.initializeApp(credentials, config);
 
-      await requestUserPermission();
+      //if (!defaultAppMessaging.isDeviceRegisteredForRemoteMessages) {
+      await defaultAppMessaging.registerDeviceForRemoteMessages();
+      //}
 
-      defaultAppMessaging.onNotificationOpenedApp((remoteMessage) => {
-        console.log(
-          'Notification caused app to open from background state:',
-          remoteMessage,
+      const authorizationStatus = await defaultAppMessaging.requestPermission({
+        alert: true,
+        sound: true,
+      });
+      if (
+        authorizationStatus ===
+        firebase.messaging.AuthorizationStatus.AUTHORIZED
+      ) {
+        console.log('User has notification permissions enabled.');
+      } else if (
+        authorizationStatus ===
+        firebase.messaging.AuthorizationStatus.PROVISIONAL
+      ) {
+        console.log('User has provisional notification permissions.');
+      } else {
+        console.log('User has notification permissions disabled');
+      }
+      //
+      if (Platform.OS === 'ios') {
+        PushNotificationIOS.requestPermissions({
+          alert: true,
+          sound: true,
+        }).then(
+          (data) => {
+            console.log('PushNotificationIOS.requestPermissions', data);
+
+            setLoading(false);
+          },
+          (data) => {
+            console.log('PushNotificationIOS.requestPermissions failed', data);
+          },
         );
-        navigation.navigate(remoteMessage.data.type);
-      });
-
-      defaultAppMessaging.getInitialNotification().then((remoteMessage) => {
-        if (remoteMessage) {
-          console.log(
-            'Notification caused app to open from quit state:',
-            remoteMessage,
-          );
-          setInitialRoute('Settings'); // e.g. "Settings"
-        }
-        console.log('getInitialNotification...');
-        setLoading(false);
-      });
-
-      defaultAppMessaging.onMessage((msg) => onMessageHandle('normal', msg));
-    };
-    const getFirebaseToken = async () => {
-      // await firebase.messaging().registerDeviceForRemoteMessages();
-      const token = await defaultAppMessaging.getToken();
-      console.log('getFirebaseToken :', token);
-      const keys = await AsyncStorage.getAllKeys();
-      console.log('AsyncStorage keys :', keys);
+      }
+      setLoading(false);
     };
 
-    initialize().then(() => {
-      getFirebaseToken();
+    initialize();
+
+    defaultAppMessaging.onTokenRefresh(async (token) => {
+      console.log('onTokenRefresh new token :', token);
     });
-    //
+
+    defaultAppMessaging.setBackgroundMessageHandler(async (remoteMessage) => {
+      console.log('Message handled in the background!', remoteMessage);
+    });
+
+    const listenerMessage = defaultAppMessaging.onMessage(
+      async (remoteMessage) => {
+        console.log('onMessage : ', remoteMessage);
+        // if (Platform.OS === 'ios') {
+        const {
+          notification: _notification,
+          data: {notification},
+        } = remoteMessage;
+        if (!_notification) {
+          onMessageHandle({
+            title: notification.title,
+            message: notification.body,
+            data: {},
+          });
+          return;
+        }
+        onMessageHandle({
+          title: _notification.title,
+          message: _notification.body,
+          data: {},
+        });
+
+        // }
+      },
+    );
+
+    return listenerMessage;
   }, []);
 
   if (loading) {

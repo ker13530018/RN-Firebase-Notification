@@ -78,6 +78,8 @@ target 'RnfSimple' do
   pod 'Folly', :podspec => '../node_modules/react-native/third-party-podspecs/Folly.podspec'
   # Custom
   pod 'Firebase/Analytics'
+  pod 'RNCPushNotificationIOS', :path => '../node_modules/@react-native-community/push-notification-ios'
+
   target 'RnfSimpleTests' do
     inherit! :complete
     # Pods for testing
