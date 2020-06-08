@@ -187,12 +187,12 @@ const App = ({navigation}) => {
 
     initialize();
 
-    defaultAppMessaging.onTokenRefresh(async (token) => {
-      console.log('onTokenRefresh new token :', token);
-    });
-
     defaultAppMessaging.setBackgroundMessageHandler(async (remoteMessage) => {
       console.log('Message handled in the background!', remoteMessage);
+    });
+
+    defaultAppMessaging.onTokenRefresh(async (token) => {
+      console.log('onTokenRefresh new token :', token);
     });
 
     const listenerMessage = defaultAppMessaging.onMessage(
