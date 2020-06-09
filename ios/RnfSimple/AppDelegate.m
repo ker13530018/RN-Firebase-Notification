@@ -3,6 +3,7 @@
 #import <React/RCTBridge.h>
 #import <React/RCTBundleURLProvider.h>
 #import <React/RCTRootView.h>
+@import Firebase;
 
 #if DEBUG
 #import <FlipperKit/FlipperClient.h>
@@ -11,10 +12,10 @@
 #import <FlipperKitNetworkPlugin/FlipperKitNetworkPlugin.h>
 #import <SKIOSNetworkPlugin/SKIOSNetworkAdapter.h>
 #import <FlipperKitReactPlugin/FlipperKitReactPlugin.h>
+
+// Setting notify
 #import <UserNotifications/UserNotifications.h>
 #import <RNCPushNotificationIOS.h>
-
-@import Firebase;
 
 static void InitializeFlipper(UIApplication *application) {
   FlipperClient *client = [FlipperClient sharedClient];
@@ -35,7 +36,49 @@ static void InitializeFlipper(UIApplication *application) {
 #if DEBUG
   InitializeFlipper(application);
 #endif
+  if ([FIRApp defaultApp] == nil) {
+    [FIRApp configure];
+  }
+  
+  /*For firebase notification*/
+  
+  if ([UNUserNotificationCenter class] != nil) {
+    // iOS 10 or later
+    // For iOS 10 display notification (sent via APNS)
+    [UNUserNotificationCenter currentNotificationCenter].delegate = self;
+    UNAuthorizationOptions authOptions = UNAuthorizationOptionAlert |
+        UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
+    [[UNUserNotificationCenter currentNotificationCenter]
+        requestAuthorizationWithOptions:authOptions
+        completionHandler:^(BOOL granted, NSError * _Nullable error) {
+          // ...
+        }];
+  } else {
+    // iOS 10 notifications aren't available; fall back to iOS 8-9 notifications.
+    UIUserNotificationType allNotificationTypes =
+    (UIUserNotificationTypeSound | UIUserNotificationTypeAlert | UIUserNotificationTypeBadge);
+    UIUserNotificationSettings *settings =
+    [UIUserNotificationSettings settingsForTypes:allNotificationTypes categories:nil];
+    [application registerUserNotificationSettings:settings];
+  }
 
+  [application registerForRemoteNotifications];
+  
+   UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+   center.delegate = self;
+  
+  [[FIRInstanceID instanceID] instanceIDWithHandler:^(FIRInstanceIDResult * _Nullable result,
+                                                      NSError * _Nullable error) {
+    if (error != nil) {
+      NSLog(@"Error fetching remote instance ID: %@", error);
+    } else {
+      NSLog(@"Remote instance ID token: %@", result.token);
+    }
+  }];
+  
+  [FIRMessaging messaging].autoInitEnabled = YES;
+  
+  /* End firebase */
   RCTBridge *bridge = [[RCTBridge alloc] initWithDelegate:self launchOptions:launchOptions];
   RCTRootView *rootView = [[RCTRootView alloc] initWithBridge:bridge
                                                    moduleName:@"RnfSimple"
@@ -49,12 +92,15 @@ static void InitializeFlipper(UIApplication *application) {
   self.window.rootViewController = rootViewController;
   [self.window makeKeyAndVisible];
   
-  UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-   center.delegate = self;
-  
-  [FIRApp configure];
-  
   return YES;
+}
+
+- (void)messaging:(FIRMessaging *)messaging didReceiveRegistrationToken:(NSString *)fcmToken {
+    NSLog(@"FCM registration token: %@", fcmToken);
+    // Notify about received token.
+    NSDictionary *dataDict = [NSDictionary dictionaryWithObject:fcmToken forKey:@"token"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:
+     @"FCMToken" object:nil userInfo:dataDict];
 }
 
 // Required to register for notifications
